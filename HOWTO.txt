@@ -1,0 +1,24 @@
+FCS Lab
+=======
+
+[켜기]
+  START.bat 을 더블클릭한다.
+  처음에는 준비하는 데 몇 분 걸린다. 끝나면 브라우저가 저절로 열린다.
+
+[끄기]
+  검은 창을 닫는다.
+
+[새 실험 결과 넣기]
+  1. 시뮬레이터에서 받은 shots CSV 를 data 폴더에 넣는다.
+  2. START.bat 을 다시 더블클릭한다.
+     이미 넣은 파일은 알아서 건너뛴다.
+
+[주소]
+  화면          http://127.0.0.1:8000/
+  API 문서      http://127.0.0.1:8000/docs
+
+[폴더]
+  data\            CSV 를 넣는 곳
+  backend\app\     프로그램 본체
+  backend\static\  화면 (index.html)
+  backend\tests\   테스트

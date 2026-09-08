@@ -1,0 +1,319 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>FCS Lab — 사격 실험 기록</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{
+  --ground:#E9EDEF;
+  --surface:#FFFFFF;
+  --ink:#16232E;
+  --muted:#657785;
+  --rule:#C6D0D7;
+  --rule-soft:#DFE5E9;
+  --signal:#0F5B62;
+  --caution:#9A6A12;
+  --tick:#8FA3B0;
+}
+*{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%}
+body{
+  margin:0;
+  background:var(--ground);
+  color:var(--ink);
+  font-family:"IBM Plex Sans KR",-apple-system,"Segoe UI",sans-serif;
+  font-size:15px;
+  line-height:1.55;
+  font-variant-numeric:tabular-nums;
+}
+.wrap{max-width:960px;margin:0 auto;padding:40px 24px 80px}
+
+header{margin-bottom:36px}
+h1{font-size:22px;font-weight:600;margin:0 0 6px;letter-spacing:-0.01em}
+.state{color:var(--muted);font-size:14px;margin:0}
+
+section{
+  background:var(--surface);
+  border:1px solid var(--rule-soft);
+  padding:24px;
+  margin-bottom:20px;
+}
+h2{font-size:15px;font-weight:600;margin:0 0 4px}
+.hint{color:var(--muted);font-size:13px;margin:0 0 20px;max-width:62ch}
+
+/* 탄착 분포 */
+.strip{width:100%;display:block}
+.axis-note{color:var(--muted);font-size:12px;margin-top:8px}
+
+/* 표 */
+table{width:100%;border-collapse:collapse;font-size:14px}
+th{
+  text-align:right;font-weight:500;color:var(--muted);
+  padding:0 10px 10px;border-bottom:1px solid var(--rule);font-size:13px;
+}
+th:first-child,td:first-child{text-align:left}
+td{padding:11px 10px;border-bottom:1px solid var(--rule-soft);text-align:right}
+tbody tr{cursor:pointer}
+tbody tr:hover{background:#F2F6F8}
+tbody tr.on{background:#E7F0F1}
+tbody tr.on td:first-child{box-shadow:inset 3px 0 0 var(--signal)}
+.thin{color:var(--caution)}
+.dash{color:var(--tick)}
+
+/* 상세 */
+.detail-head{display:flex;align-items:baseline;gap:12px;margin-bottom:18px}
+.detail-head h2{margin:0}
+.detail-head span{color:var(--muted);font-size:13px}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:32px}
+.sub{font-size:13px;color:var(--muted);margin:0 0 12px}
+
+.bar-row{display:grid;grid-template-columns:52px 1fr 62px;align-items:center;gap:10px;margin-bottom:9px}
+.bar-track{height:9px;background:var(--rule-soft)}
+.bar-fill{height:9px;background:var(--signal)}
+.bar-val{text-align:right;font-size:13px}
+.bar-n{color:var(--muted);font-size:12px}
+
+.corr{border-bottom:1px solid var(--rule-soft);padding:10px 0}
+.corr:last-child{border-bottom:none}
+.corr-top{display:flex;justify-content:space-between;gap:12px}
+.corr-r{color:var(--muted);font-size:13px}
+.corr-say{color:var(--muted);font-size:13px;margin-top:2px}
+
+.warn{
+  border-left:3px solid var(--caution);
+  padding:10px 14px;margin-bottom:18px;
+  background:#FBF7EE;font-size:13px;
+}
+.empty{color:var(--muted);font-size:14px}
+.err{border-left:3px solid #8C2F2F;padding:12px 16px;background:#FBF0F0;font-size:14px}
+@media (max-width:680px){
+  .grid{grid-template-columns:1fr;gap:28px}
+  .wrap{padding:28px 16px 60px}
+  .hide-sm{display:none}
+}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header>
+  <h1>사격 실험 기록</h1>
+  <p class="state" id="state">불러오는 중</p>
+</header>
+
+<div id="error"></div>
+
+<section id="sec-strip" hidden>
+  <h2>회차별 탄착 오차</h2>
+  <p class="hint">눈금 하나가 한 발이다. 굵은 세로선은 중앙값. 표본이 10발 미만인 회차는 회색으로 두었다.</p>
+  <svg class="strip" id="strip"></svg>
+  <p class="axis-note">지형 오폭(terrain)은 제외했다.</p>
+</section>
+
+<section id="sec-table" hidden>
+  <h2>회차 요약</h2>
+  <p class="hint">줄을 누르면 아래에 자세히 나온다.</p>
+  <table>
+    <thead>
+      <tr>
+        <th>회차</th>
+        <th>분석</th>
+        <th>중앙값</th>
+        <th>평균</th>
+        <th class="hide-sm">최소</th>
+        <th class="hide-sm">최대</th>
+        <th class="hide-sm">표준편차</th>
+      </tr>
+    </thead>
+    <tbody id="tbody"></tbody>
+  </table>
+</section>
+
+<section id="sec-detail" hidden></section>
+
+</div>
+
+<script>
+const API = "";
+const fmt = v => (v === null || v === undefined) ? "—" : v.toFixed(3);
+const el = id => document.getElementById(id);
+
+let runs = [];
+let selected = null;
+
+async function get(path){
+  const res = await fetch(API + path);
+  if(!res.ok) throw new Error(path + " → " + res.status);
+  return res.json();
+}
+
+function drawStrip(){
+  const usable = runs.filter(r => r.n > 0);
+  if(!usable.length) return;
+
+  const rowH = 26, padL = 46, padR = 16, padT = 8, padB = 26;
+  const w = el("strip").clientWidth || 800;
+  const h = padT + usable.length * rowH + padB;
+  const max = Math.max(...usable.map(r => r.worst)) * 1.05;
+  const x = v => padL + (v / max) * (w - padL - padR);
+
+  let s = "";
+
+  // 눈금
+  const step = max > 4 ? 1 : 0.5;
+  for(let t = 0; t <= max; t += step){
+    s += `<line x1="${x(t)}" y1="${padT}" x2="${x(t)}" y2="${h-padB}"
+           stroke="var(--rule-soft)"/>`;
+    s += `<text x="${x(t)}" y="${h-padB+16}" font-size="11" fill="var(--muted)"
+           text-anchor="middle">${t}</text>`;
+  }
+  s += `<text x="${w-padR}" y="${h-padB+16}" font-size="11" fill="var(--muted)"
+         text-anchor="end">오차 [m]</text>`;
+
+  usable.forEach((r, i) => {
+    const y = padT + i * rowH + rowH / 2;
+    const color = r.reliable ? "var(--signal)" : "var(--tick)";
+
+    s += `<text x="${padL-10}" y="${y+4}" font-size="12" fill="var(--muted)"
+           text-anchor="end">${r.run_no}</text>`;
+    // 최소~최대 범위
+    s += `<line x1="${x(r.best)}" y1="${y}" x2="${x(r.worst)}" y2="${y}"
+           stroke="var(--rule)" stroke-width="1"/>`;
+    // 개별 탄착
+    (r.shots || []).forEach(m => {
+      s += `<line x1="${x(m)}" y1="${y-6}" x2="${x(m)}" y2="${y+6}"
+             stroke="${color}" stroke-width="1" opacity="0.5"/>`;
+    });
+    // 중앙값
+    s += `<line x1="${x(r.median)}" y1="${y-9}" x2="${x(r.median)}" y2="${y+9}"
+           stroke="${color}" stroke-width="2.5"/>`;
+  });
+
+  el("strip").setAttribute("viewBox", `0 0 ${w} ${h}`);
+  el("strip").setAttribute("height", h);
+  el("strip").innerHTML = s;
+}
+
+function drawTable(){
+  el("tbody").innerHTML = runs.map(r => {
+    const thin = r.n > 0 && !r.reliable ? " class='thin'" : "";
+    const n = r.n === 0
+      ? `<span class="dash">기록 없음</span>`
+      : `<span${thin}>${r.analyzed_shots}발</span>`;
+    return `<tr data-id="${r.experiment_id}">
+      <td>${r.name}</td>
+      <td>${n}</td>
+      <td>${fmt(r.median)}</td>
+      <td>${fmt(r.mean)}</td>
+      <td class="hide-sm">${fmt(r.best)}</td>
+      <td class="hide-sm">${fmt(r.worst)}</td>
+      <td class="hide-sm">${fmt(r.stdev)}</td>
+    </tr>`;
+  }).join("");
+
+  el("tbody").querySelectorAll("tr").forEach(tr => {
+    tr.onclick = () => select(Number(tr.dataset.id));
+  });
+}
+
+async function select(id){
+  selected = id;
+  el("tbody").querySelectorAll("tr").forEach(tr => {
+    tr.classList.toggle("on", Number(tr.dataset.id) === id);
+  });
+
+  const d = await get(`/api/stats/experiments/${id}`);
+  const o = d.overall;
+  const sec = el("sec-detail");
+  sec.hidden = false;
+
+  if(o.n === 0){
+    sec.innerHTML = `<div class="detail-head"><h2>${d.name}</h2></div>
+      <p class="empty">이 회차에는 사격 기록이 없다.</p>`;
+    return;
+  }
+
+  const maxZone = Math.max(...d.by_zone.map(z => z.median || 0));
+  const zoneName = {front:"정면", rear:"후면", side:"측면", unknown:"미상"};
+
+  const zones = d.by_zone.map(z => `
+    <div class="bar-row">
+      <span>${zoneName[z.zone] || z.zone}</span>
+      <div class="bar-track"><div class="bar-fill"
+        style="width:${maxZone ? (z.median/maxZone*100) : 0}%"></div></div>
+      <span class="bar-val">${fmt(z.median)} <span class="bar-n">${z.n}</span></span>
+    </div>`).join("");
+
+  const corrs = d.correlations.map(c => `
+    <div class="corr">
+      <div class="corr-top">
+        <span>${c.label}</span>
+        <span class="corr-r">${c.r === null ? "—" : c.r}</span>
+      </div>
+      <div class="corr-say">${c.interpretation}</div>
+    </div>`).join("");
+
+  sec.innerHTML = `
+    <div class="detail-head">
+      <h2>${d.name}</h2>
+      <span>${o.n}발 분석 · 중앙값 ${fmt(o.median)} m</span>
+    </div>
+    ${d.warning ? `<div class="warn">${d.warning}</div>` : ""}
+    <div class="grid">
+      <div>
+        <p class="sub">표적 방향별 오차 중앙값 [m]</p>
+        ${zones}
+      </div>
+      <div>
+        <p class="sub">오차와 함께 움직이는 값</p>
+        ${corrs}
+      </div>
+    </div>`;
+}
+
+async function boot(){
+  try{
+    const data = await get("/api/stats/runs");
+    runs = data.runs;
+
+    // 분포를 그리려면 개별 탄착이 필요하다.
+    await Promise.all(runs.filter(r => r.n > 0).map(async r => {
+      const shots = await get(`/api/experiments/${r.experiment_id}/shots`);
+      r.shots = shots.filter(s => s.kind !== "terrain" && s.miss !== null)
+                     .map(s => s.miss);
+    }));
+
+    const total = runs.reduce((a, r) => a + r.analyzed_shots, 0);
+    const solid = runs.filter(r => r.reliable).length;
+    el("state").textContent =
+      `${runs.length}개 회차, 분석 대상 ${total}발. 표본이 충분한 회차는 ${solid}개.`;
+
+    el("sec-strip").hidden = false;
+    el("sec-table").hidden = false;
+    drawStrip();
+    drawTable();
+
+    const first = runs.find(r => r.reliable) || runs.find(r => r.n > 0);
+    if(first) select(first.experiment_id);
+  }catch(e){
+    el("state").textContent = "";
+    el("error").innerHTML =
+      `<div class="err">서버에 연결하지 못했다. uvicorn 이 켜져 있는지 확인하고
+       이 페이지를 새로고침한다.<br><small>${e.message}</small></div>`;
+  }
+}
+
+let t;
+window.addEventListener("resize", () => {
+  clearTimeout(t);
+  t = setTimeout(drawStrip, 150);
+});
+
+boot();
+</script>
+</body>
+</html>
