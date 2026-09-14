@@ -5,6 +5,7 @@ Swagger 에서 아홉 번 반복하는 대신 이걸 실행한다.
 
     python seed.py
 """
+import json
 import sys
 from pathlib import Path
 
@@ -15,12 +16,26 @@ from app.csv_parser import CsvFormatError, parse_shots_csv  # noqa: E402
 from app.database import Base, SessionLocal, engine  # noqa: E402
 
 DATA_DIR = Path(__file__).parent.parent / "data"
+NOTES_FILE = DATA_DIR / "notes.json"
+
+
+def load_notes() -> dict:
+    """회차별 실험 조건 메모. 없으면 빈 값으로 둔다."""
+    if not NOTES_FILE.exists():
+        return {}
+    try:
+        raw = json.loads(NOTES_FILE.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as e:
+        print(f"[!] notes.json 을 읽지 못했습니다: {e}")
+        return {}
+    return {k: v for k, v in raw.items() if not k.startswith("_")}
 
 
 def main():
     Base.metadata.create_all(bind=engine)
     db = SessionLocal()
 
+    notes = load_notes()
     files = sorted(DATA_DIR.glob("*.csv"))
     if not files:
         print(f"[!] {DATA_DIR} 에 CSV 가 없습니다.")
@@ -48,7 +63,7 @@ def main():
         run_no = meta["run_no"]
         exp = models.Experiment(
             name=f"{run_no}회차" if run_no else path.stem,
-            note="",
+            note=notes.get(str(run_no), ""),
             **meta,
         )
         db.add(exp)

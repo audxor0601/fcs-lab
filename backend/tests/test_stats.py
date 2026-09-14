@@ -57,3 +57,25 @@ def test_group_by_zone():
     out = stats.group_by(rows, "zone")
     assert out[0]["zone"] == "side"  # 중앙값 오름차순
     assert out[1]["n"] == 2
+
+
+def test_speed_profile():
+    assert stats.speed_profile([2.4, 2.5, 2.6]) == 2.5
+    assert stats.speed_profile([]) is None
+
+
+def test_speed_doubling_blocks_comparison():
+    """표적 속도가 2배면 난이도가 달라 비교할 수 없다."""
+    assert stats.comparable_speed(2.5, 4.9) is False
+    assert stats.comparable_speed(2.5, 2.6) is True
+
+
+def test_missing_speed_does_not_block():
+    """근거가 없으면 막지 않는다."""
+    assert stats.comparable_speed(None, 4.9) is True
+
+
+def test_speed_mix_warning():
+    assert stats.speed_mix_warning([2.5, 5.0]) is not None
+    assert stats.speed_mix_warning([2.5, 2.6]) is None
+    assert stats.speed_mix_warning([2.5]) is None

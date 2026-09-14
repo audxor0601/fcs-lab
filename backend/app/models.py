@@ -33,9 +33,11 @@ class Experiment(Base):
     moving_fire = Column(Boolean, default=True)
     probe_no_los = Column(Boolean, default=False)
 
-    # CSV 전 행에 동일하게 박혀 있는 값이라 회차 속성으로 올렸다.
-    bias_range = Column(Float, nullable=True)
-    bias_n = Column(Integer, nullable=True)
+    # bias_range 는 설정값이 아니라 BiasEstimator 가 사격 중에 학습하는 값이다.
+    # 지형 착탄이 나올 때만 갱신되므로 회차 안에서 움직인다.
+    # 그래서 개별 값은 shot 에 두고, 여기에는 시작/끝만 남긴다.
+    bias_range_start = Column(Float, nullable=True)
+    bias_range_end = Column(Float, nullable=True)
     lon_shift = Column(Float, nullable=True)
 
     shot_count = Column(Integer, default=0)
@@ -70,5 +72,7 @@ class Shot(Base):
     hull_roll = Column(Float)
     est_speed = Column(Float)  # 추정 속도 [m/s]
     dy = Column(Float)  # 표적과의 고저차 [m]
+    bias_range = Column(Float)  # 이 탄을 쏠 때의 사거리 보정값 [m]
+    bias_n = Column(Integer)  # 보정에 쓰인 표본 수
 
     experiment = relationship("Experiment", back_populates="shots")

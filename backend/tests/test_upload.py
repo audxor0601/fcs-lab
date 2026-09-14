@@ -41,7 +41,7 @@ def test_bom_header_is_stripped():
     raw = ("\ufeff" + HEADER + ROW).encode("utf-8")
     meta, records = parse_shots_csv(raw, "shots (33).csv")
     assert records[0]["shot_no"] == 1
-    assert meta["bias_range"] == -8.54
+    assert meta["bias_range_start"] == -8.54
 
 
 def test_empty_file_is_accepted():
@@ -88,3 +88,35 @@ def test_non_csv_rejected(client):
         data={"name": "x"},
     )
     assert res.status_code == 400
+
+
+def test_bias_range_may_move_within_a_run():
+    """사거리 보정은 사격 중에 학습된다. 값이 변해도 거부하면 안 된다."""
+    row2 = ROW.replace("-8.54,3,0.0", "0.478,6,0.0").replace("1,68.01", "2,70.0")
+    raw = (HEADER + ROW + row2).encode()
+    meta, records = parse_shots_csv(raw, "shots (40).csv")
+    assert len(records) == 2
+    assert meta["bias_range_start"] == -8.54
+    assert meta["bias_range_end"] == 0.478
+
+
+def test_lon_shift_change_is_still_rejected():
+    """반면 lon_shift 는 설정값이라 도중에 바뀌면 안 된다."""
+    row2 = ROW.replace(",3,0.0", ",3,5.0").replace("1,68.01", "2,70.0")
+    with pytest.raises(CsvFormatError):
+        parse_shots_csv((HEADER + ROW + row2).encode(), "bad.csv")
+
+
+def test_hit_rate_counts_terrain_as_miss():
+    from app import stats
+    rows = [{"kind": "tank"}] * 11 + [{"kind": "terrain"}] * 3
+    r = stats.hit_rate(rows)
+    assert r["hits"] == 11 and r["misses"] == 3 and r["hit_rate"] == 78.6
+
+
+def test_posture_uses_share_not_median():
+    """기동 사격 회차도 멈춰 쏜 탄이 많아 중앙값은 0 근처다."""
+    from app import stats
+    moving = [0.1] * 6 + [5.0] * 4   # 중앙값 0.1 이지만 40% 가 기동
+    assert stats.firing_posture(moving) == "기동"
+    assert stats.firing_posture([0.1] * 10) == "정지"

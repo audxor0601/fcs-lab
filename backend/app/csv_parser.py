@@ -16,8 +16,9 @@ REQUIRED_COLUMNS = [
     "est_speed", "dy", "bias_range", "bias_n", "lon_shift",
 ]
 
-# experiment 로 올라가는 컬럼 (전 행이 같은 값)
-EXPERIMENT_LEVEL = ["bias_range", "bias_n", "lon_shift"]
+# 회차 전체에 고정인 값만 experiment 로 올린다.
+# bias_range / bias_n 은 사격 중에 학습되어 움직이므로 여기 넣지 않는다.
+EXPERIMENT_LEVEL = ["lon_shift"]
 
 
 class CsvFormatError(ValueError):
@@ -46,8 +47,8 @@ def parse_shots_csv(raw: bytes, filename: str = ""):
         "run_no": extract_run_no(filename),
         "source_filename": filename,
         "shot_count": len(df),
-        "bias_range": None,
-        "bias_n": None,
+        "bias_range_start": None,
+        "bias_range_end": None,
         "lon_shift": None,
     }
 
@@ -64,6 +65,12 @@ def parse_shots_csv(raw: bytes, filename: str = ""):
             )
         if len(uniques) == 1:
             meta[col] = uniques[0].item()
+
+    # 사거리 보정은 회차 안에서 학습되며 움직인다. 시작과 끝만 남긴다.
+    bias = df["bias_range"].dropna()
+    if len(bias):
+        meta["bias_range_start"] = float(bias.iloc[0])
+        meta["bias_range_end"] = float(bias.iloc[-1])
 
     shot_cols = [c for c in REQUIRED_COLUMNS if c not in EXPERIMENT_LEVEL]
     records = df[shot_cols].rename(columns={"id": "shot_no"}).to_dict("records")

@@ -33,7 +33,8 @@ def _shot_rows(shots, exclude_terrain: bool) -> List[dict]:
         rows.append({
             "miss": s.miss, "kind": s.kind, "zone": s.zone,
             "dy": s.dy, "dist": s.dist, "drift_deg": s.drift_deg,
-            "enemy_speed": s.enemy_speed, "speed_err": speed_err,
+            "enemy_speed": s.enemy_speed, "my_speed": s.my_speed,
+            "speed_err": speed_err,
         })
     return rows
 
@@ -50,29 +51,44 @@ def runs_overview(
 
     out = []
     for exp in experiments:
-        rows = _shot_rows(exp.shots, exclude_terrain)
-        summary = stats.summarize([r["miss"] for r in rows])
+        # 명중률은 쏜 탄 전부를 봐야 한다. 빗나간 탄을 빼고 세면 의미가 없다.
+        all_rows = _shot_rows(exp.shots, exclude_terrain=False)
+        # 오차는 맞은 탄에 대해서만 잰다. 지형에 박힌 탄의 오차는 성격이 다르다.
+        hit_rows = _shot_rows(exp.shots, exclude_terrain=True)
+
+        summary = stats.summarize([r["miss"] for r in hit_rows])
         out.append({
             "experiment_id": exp.id,
             "name": exp.name,
             "run_no": exp.run_no,
             "note": exp.note,
             "enemy_fire": exp.enemy_fire,
+            "target_speed": stats.speed_profile([r["enemy_speed"] for r in all_rows]),
+            "posture": stats.firing_posture([r["my_speed"] for r in all_rows]),
             "total_shots": exp.shot_count,
-            "analyzed_shots": len(rows),
-            "terrain_excluded": exp.shot_count - len(rows) if exclude_terrain else 0,
+            "analyzed_shots": len(hit_rows),
+            **stats.hit_rate(all_rows),
             **summary,
             "warning": stats.mean_median_gap_warning(summary),
         })
 
     # 조건이 다른 회차가 섞여 있으면 통째로 경고한다. 섞어서 평균 내면 의미가 없다.
-    conditions = {(e["enemy_fire"],) for e in out}
-    notice = None
-    if len(conditions) > 1:
-        notice = ("실험 조건(적 사격 여부)이 다른 회차가 섞여 있습니다. "
-                  "조건별로 나눠서 보십시오.")
+    notices = []
+    if len({e["enemy_fire"] for e in out}) > 1:
+        notices.append("적 사격 여부가 다른 회차가 섞여 있습니다. 조건별로 나눠서 보십시오.")
 
-    return {"runs": out, "notice": notice}
+    speed_note = stats.speed_mix_warning([e["target_speed"] for e in out])
+    if speed_note:
+        notices.append(speed_note)
+
+    postures = {e["posture"] for e in out if e["posture"]}
+    if len(postures) > 1:
+        notices.append(
+            "정지 사격과 기동 사격이 섞여 있습니다. 달리면서 쏜 회차가 불리하므로 "
+            "자세가 같은 회차끼리 비교하십시오."
+        )
+
+    return {"runs": out, "notice": " ".join(notices) or None, "notices": notices}
 
 
 @router.get("/experiments/{exp_id}")
@@ -86,6 +102,7 @@ def experiment_detail(
     if not exp:
         raise HTTPException(404, "해당 회차가 없습니다.")
 
+    all_rows = _shot_rows(exp.shots, exclude_terrain=False)
     rows = _shot_rows(exp.shots, exclude_terrain)
     overall = stats.summarize([r["miss"] for r in rows])
 
@@ -105,6 +122,8 @@ def experiment_detail(
         "name": exp.name,
         "run_no": exp.run_no,
         "note": exp.note,
+        "accuracy": stats.hit_rate(all_rows),
+        "posture": stats.firing_posture([r["my_speed"] for r in all_rows]),
         "overall": overall,
         "warning": stats.mean_median_gap_warning(overall),
         "by_zone": stats.group_by(rows, "zone"),
@@ -127,11 +146,15 @@ def compare_runs(
         exp = db.get(models.Experiment, exp_id)
         if not exp:
             raise HTTPException(404, f"회차 id {exp_id} 가 없습니다.")
+        all_rows = _shot_rows(exp.shots, exclude_terrain=False)
         rows = _shot_rows(exp.shots, exclude_terrain)
         summary = stats.summarize([r["miss"] for r in rows])
         items.append({
             "experiment_id": exp.id, "name": exp.name, "run_no": exp.run_no,
             "note": exp.note, "enemy_fire": exp.enemy_fire,
+            "target_speed": stats.speed_profile([r["enemy_speed"] for r in all_rows]),
+            "posture": stats.firing_posture([r["my_speed"] for r in all_rows]),
+            **stats.hit_rate(all_rows),
             **summary,
             "by_zone": stats.group_by(rows, "zone"),
         })
@@ -149,6 +172,20 @@ def _compare_verdict(items: List[dict]) -> str:
     if {i["enemy_fire"] for i in usable} != {usable[0]["enemy_fire"]}:
         return "적 사격 조건이 서로 다른 회차입니다. 오차를 직접 비교하면 안 됩니다."
 
+    speeds = [i["target_speed"] for i in usable]
+    if not all(stats.comparable_speed(speeds[0], s) for s in speeds[1:]):
+        lo, hi = min(s for s in speeds if s), max(s for s in speeds if s)
+        return (f"표적 속도가 다릅니다 ({lo} vs {hi} m/s). 난이도가 달라 "
+                "오차를 직접 비교할 수 없습니다.")
+
+    # 명중률이 먼저다. 맞히지 못한 사격의 오차는 의미가 없다.
+    rates = [i["hit_rate"] for i in usable if i["hit_rate"] is not None]
+    if rates and max(rates) - min(rates) >= 5:
+        top = max(usable, key=lambda i: i["hit_rate"] or 0)
+        low = min(usable, key=lambda i: i["hit_rate"] or 0)
+        return (f"{top['name']} 명중률 {top['hit_rate']}%, "
+                f"{low['name']} {low['hit_rate']}%. 명중률 차이가 먼저입니다.")
+
     best = min(usable, key=lambda i: i["median"])
     worst = max(usable, key=lambda i: i["median"])
     gap = worst["median"] - best["median"]
@@ -161,5 +198,6 @@ def _compare_verdict(items: List[dict]) -> str:
     if gap < 0.1:
         return "회차 간 차이가 0.1 m 미만입니다. 의미 있는 차이로 보기 어렵습니다."
 
-    return (f"{best['name']} 이 중앙값 {best['median']} m 로 가장 좋습니다 "
+    return (f"명중률은 비슷합니다. 명중탄 오차는 {best['name']} 이 "
+            f"{best['median']} m 로 가장 좋습니다 "
             f"({worst['name']} 대비 {round(gap, 2)} m 우수).")

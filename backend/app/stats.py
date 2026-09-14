@@ -20,6 +20,26 @@ def _clean(values: List[Optional[float]]) -> List[float]:
     return [v for v in values if v is not None]
 
 
+def hit_rate(rows: List[dict]) -> dict:
+    """명중률. kind == "tank" 가 표적 명중, "terrain" 은 지형 착탄(빗나감)이다.
+
+    p_hit 은 발사 직전에 계산한 예측 확률이라 실제 결과가 아니다. 쓰지 않는다.
+    """
+    total = len(rows)
+    if total == 0:
+        return {"shots": 0, "hits": 0, "misses": 0, "hit_rate": None,
+                "hit_rate_reliable": False}
+
+    hits = sum(1 for r in rows if r.get("kind") == "tank")
+    return {
+        "shots": total,
+        "hits": hits,
+        "misses": total - hits,
+        "hit_rate": round(hits / total * 100, 1),
+        "hit_rate_reliable": total >= MIN_RELIABLE_N,
+    }
+
+
 def summarize(misses: List[Optional[float]]) -> dict:
     """오차 목록 하나를 요약한다."""
     vals = _clean(misses)
@@ -90,3 +110,54 @@ def group_by(rows: List[dict], key: str) -> List[dict]:
         s[key] = name
         out.append(s)
     return sorted(out, key=lambda d: (d["median"] is None, d["median"]))
+
+
+# ── 실험 조건 비교 ────────────────────────────────────────────
+# 표적 속도가 다르면 난이도가 다르다. 같은 오차라도 의미가 다르므로
+# 나란히 놓고 비교하면 안 된다.
+SPEED_RATIO_TOLERANCE = 1.25
+
+
+def speed_profile(speeds: List[Optional[float]]) -> Optional[float]:
+    """회차의 대표 표적 속도. 중앙값을 쓴다."""
+    vals = _clean(speeds)
+    return round(statistics.median(vals), 2) if vals else None
+
+
+def comparable_speed(a: Optional[float], b: Optional[float]) -> bool:
+    """두 회차의 표적 속도가 같은 조건으로 볼 만한가."""
+    if a is None or b is None or a <= 0 or b <= 0:
+        return True  # 판단할 근거가 없으면 막지 않는다
+    hi, lo = max(a, b), min(a, b)
+    return hi / lo <= SPEED_RATIO_TOLERANCE
+
+
+def speed_mix_warning(speeds: List[Optional[float]]) -> Optional[str]:
+    """여러 회차를 함께 볼 때 표적 속도가 섞였는지 본다."""
+    vals = [s for s in speeds if s is not None and s > 0]
+    if len(vals) < 2:
+        return None
+    hi, lo = max(vals), min(vals)
+    if hi / lo <= SPEED_RATIO_TOLERANCE:
+        return None
+    return (f"표적 속도가 회차마다 다릅니다 ({lo} ~ {hi} m/s, 최대 {hi/lo:.1f}배). "
+            "속도가 빠를수록 맞히기 어려우므로, 오차만 놓고 회차를 비교하면 "
+            "느린 조건이 유리해 보입니다. 속도가 비슷한 회차끼리 묶어서 보십시오.")
+
+
+# ── 사격 자세 ────────────────────────────────────────────────
+# 아군이 서서 쏘는지 달리면서 쏘는지에 따라 난이도가 다르다.
+MOVING_SPEED = 1.0  # m/s — 이 이상이면 움직이는 중으로 본다
+MOVING_SHARE = 0.15  # 이 비율 이상이 움직이며 쏜 사격이면 기동 사격 회차
+
+def firing_posture(my_speeds: List[Optional[float]]) -> Optional[str]:
+    """회차의 사격 자세.
+
+    중앙값은 쓸 수 없다. 기동 사격 회차에도 잠시 멈춰서 쏜 탄이 많아
+    중앙값이 0 근처로 내려간다. 움직이며 쏜 탄의 '비율'로 판정한다.
+    """
+    vals = _clean(my_speeds)
+    if not vals:
+        return None
+    share = sum(1 for v in vals if v >= MOVING_SPEED) / len(vals)
+    return "기동" if share >= MOVING_SHARE else "정지"

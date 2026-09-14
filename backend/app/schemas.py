@@ -23,8 +23,8 @@ class ExperimentOut(BaseModel):
     enemy_fire: bool
     moving_fire: bool
     probe_no_los: bool
-    bias_range: Optional[float]
-    bias_n: Optional[int]
+    bias_range_start: Optional[float]
+    bias_range_end: Optional[float]
     lon_shift: Optional[float]
     shot_count: int
     source_filename: str
@@ -46,3 +46,4 @@ class ShotOut(BaseModel):
     enemy_speed: Optional[float]
     est_speed: Optional[float]
     dy: Optional[float]
+    bias_range: Optional[float]
