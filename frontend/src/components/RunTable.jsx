@@ -48,10 +48,18 @@ export default function RunTable({ runs, selectedId, onSelect }) {
               ) : (
                 `${r.hits}/${r.shots}`
               )}
+              {r.unmatched > 0 && (
+                <span className="gap">
+                  발사 {r.fired} · 미기록 {r.unmatched}
+                </span>
+              )}
             </td>
             <td className={r.hit_rate === 100 ? "full" : ""}>
               {r.hit_rate === null ? "—" : `${r.hit_rate}%`}
               {!r.hit_rate_reliable && r.shots > 0 && <span className="thin"> *</span>}
+              {r.unmatched > 0 && (
+                <span className="gap">발사 기준 {r.hit_rate_fired}%</span>
+              )}
             </td>
             <td>{fmt(r.median)}</td>
             <td className="hide-sm">{fmt(r.worst)}</td>

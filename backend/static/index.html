@@ -62,6 +62,15 @@ tbody tr:hover{background:#F2F6F8}
 tbody tr.on{background:#E7F0F1}
 tbody tr.on td:first-child{box-shadow:inset 3px 0 0 var(--signal)}
 .thin{color:var(--caution)}
+.gap{display:block;color:#8C2F2F;font-size:12px;margin-top:2px;line-height:1.35;font-weight:500}
+.warn.gap-warn{border-left-color:#8C2F2F;background:#FBF0F0}
+.warn.gap-warn strong{display:block;margin-bottom:4px}
+.warn.gap-warn p{margin:0 0 4px}
+.warn.gap-warn p:last-child{margin-bottom:0}
+.gap-eq{color:var(--muted);font-variant-numeric:tabular-nums}
+.warn.notice{background:#FBF0F0;border-left:3px solid #8C2F2F;padding:14px 16px;margin-bottom:20px}
+.warn.notice p{margin:0 0 8px}
+.warn.notice p:last-child{margin-bottom:0}
 .dash{color:var(--tick)}
 
 /* 상세 */
@@ -103,9 +112,12 @@ tbody tr.on td:first-child{box-shadow:inset 3px 0 0 var(--signal)}
 <header>
   <h1>사격 실험 기록</h1>
   <p class="state" id="state">불러오는 중</p>
+  <p class="state gap" id="state-gap" hidden></p>
 </header>
 
 <div id="error"></div>
+
+<div class="warn notice" id="notices" hidden></div>
 
 <section id="sec-strip" hidden>
   <h2>회차별 탄착 오차</h2>
@@ -204,8 +216,10 @@ function drawTable(){
     const n = r.n === 0
       ? `<span class="dash">기록 없음</span>`
       : `<span${thin}>${r.analyzed_shots}발</span>`;
+    const gap = r.unmatched > 0
+      ? `<span class="gap">발사 ${r.fired} · 미기록 ${r.unmatched}</span>` : "";
     return `<tr data-id="${r.experiment_id}">
-      <td>${r.name}</td>
+      <td>${r.name}${gap}</td>
       <td>${n}</td>
       <td>${fmt(r.median)}</td>
       <td>${fmt(r.mean)}</td>
@@ -262,6 +276,12 @@ async function select(id){
       <h2>${d.name}</h2>
       <span>${o.n}발 분석 · 중앙값 ${fmt(o.median)} m</span>
     </div>
+    ${d.integrity && d.integrity.warning ? `<div class="warn gap-warn">
+      <strong>발사 수와 기록 수가 어긋난다</strong>
+      <p>${d.integrity.warning}</p>
+      <p class="gap-eq">발사 ${d.integrity.fired} = 기록 ${d.integrity.recorded} + 미기록 ${d.integrity.unmatched}${
+        d.integrity.missing_ids.length ? ` (빠진 번호 ${d.integrity.missing_ids.join(", ")})` : ""}</p>
+    </div>` : ""}
     ${d.warning ? `<div class="warn">${d.warning}</div>` : ""}
     <div class="grid">
       <div>
@@ -286,6 +306,19 @@ async function boot(){
       r.shots = shots.filter(s => s.kind !== "terrain" && s.miss !== null)
                      .map(s => s.miss);
     }));
+
+    const firedTotal = runs.reduce((a, r) => a + (r.fired || 0), 0);
+    const recTotal = runs.reduce((a, r) => a + (r.recorded || 0), 0);
+    const gapTotal = runs.reduce((a, r) => a + (r.unmatched || 0), 0);
+    if (gapTotal > 0) {
+      el("state-gap").hidden = false;
+      el("state-gap").textContent =
+        `발사 ${firedTotal} = 기록 ${recTotal} + 미기록 ${gapTotal}`;
+    }
+    if ((data.notices || []).length) {
+      el("notices").hidden = false;
+      el("notices").innerHTML = data.notices.map(n => `<p>${n}</p>`).join("");
+    }
 
     const total = runs.reduce((a, r) => a + r.analyzed_shots, 0);
     const solid = runs.filter(r => r.reliable).length;

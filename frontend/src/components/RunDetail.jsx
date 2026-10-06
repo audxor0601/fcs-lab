@@ -50,6 +50,18 @@ export default function RunDetail({ id }) {
       </div>
 
       {data.note && <p className="detail-note">{data.note}</p>}
+      {data.integrity?.warning && (
+        <div className="warn gap-warn">
+          <strong>발사 수와 기록 수가 어긋난다</strong>
+          <p>{data.integrity.warning}</p>
+          <p className="gap-eq">
+            발사 {data.integrity.fired} = 기록 {data.integrity.recorded} + 미기록{" "}
+            {data.integrity.unmatched}
+            {data.integrity.missing_ids.length > 0 &&
+              ` (빠진 번호 ${data.integrity.missing_ids.join(", ")})`}
+          </p>
+        </div>
+      )}
       {data.warning && <div className="warn">{data.warning}</div>}
 
       <div className="grid">

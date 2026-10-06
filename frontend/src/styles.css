@@ -102,3 +102,16 @@ tbody tr.divider td{border-top:1px dashed var(--caution)}
 .detail-note{
   color:var(--muted);font-size:13px;margin:-8px 0 16px;max-width:70ch;
 }
+
+/* 발사 수와 기록 수가 어긋난 자리 */
+.gap{
+  display:block;color:#8C2F2F;font-size:12px;
+  margin-top:2px;line-height:1.35;font-weight:500;
+}
+.warn.gap-warn{
+  border-left-color:#8C2F2F;background:#FBF0F0;
+}
+.warn.gap-warn strong{display:block;margin-bottom:4px}
+.warn.gap-warn p{margin:0 0 4px}
+.warn.gap-warn p:last-child{margin-bottom:0}
+.gap-eq{color:var(--muted);font-variant-numeric:tabular-nums}

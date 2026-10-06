@@ -32,6 +32,8 @@ export default function App() {
 
   const shots = runs.reduce((a, r) => a + (r.shots || 0), 0);
   const hits = runs.reduce((a, r) => a + (r.hits || 0), 0);
+  const fired = runs.reduce((a, r) => a + (r.fired || 0), 0);
+  const unmatched = fired - shots;
   const rate = shots ? ((hits / shots) * 100).toFixed(1) : "—";
 
   return (
@@ -43,6 +45,12 @@ export default function App() {
             ? "불러오는 중"
             : `${runs.length}개 회차 · ${shots}발 중 ${hits}발 명중 (${rate}%)`}
         </p>
+        {!loading && unmatched > 0 && (
+          <p className="state gap">
+            발사 {fired} = 기록 {shots} + 미기록 {unmatched} · 발사 기준{" "}
+            {((hits / fired) * 100).toFixed(1)}%
+          </p>
+        )}
       </header>
 
       {!loading && notices.length > 0 && (

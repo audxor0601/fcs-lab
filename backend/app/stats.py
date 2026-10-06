@@ -161,3 +161,75 @@ def firing_posture(my_speeds: List[Optional[float]]) -> Optional[str]:
         return None
     share = sum(1 for v in vals if v >= MOVING_SPEED) / len(vals)
     return "기동" if share >= MOVING_SHARE else "정지"
+
+
+# ── 기록 무결성 ──────────────────────────────────────────────
+# 시뮬레이터는 발사할 때마다 id 를 1씩 올린다. 그런데 착탄 정보가 들어오지
+# 않으면 그 발의 행 자체가 빠진다. 행 수만 세면 분모가 조용히 줄어들고
+# 명중률이 저절로 올라간다. id 가 건너뛴 자리를 찾아 따로 센다.
+
+
+def record_integrity(shot_nos: List[Optional[int]]) -> dict:
+    """발사 번호가 이어지는지 본다.
+
+    발사 수 = max(id), 기록 수 = 행 수, 미기록 = 그 사이에 빠진 id.
+    한계: 마지막 발부터 끊긴 경우는 잡지 못한다. 중간이 비어야 보인다.
+    """
+    nums = [int(n) for n in shot_nos if n is not None]
+    recorded = len(nums)
+    uniq = sorted(set(nums))
+    if not uniq:
+        return {"recorded": 0, "fired": 0, "unmatched": 0,
+                "missing_ids": [], "duplicated": 0, "ok": True}
+
+    fired = uniq[-1]
+    present = set(uniq)
+    missing = [i for i in range(1, fired + 1) if i not in present]
+    return {
+        "recorded": recorded,
+        "fired": fired,
+        "unmatched": len(missing),
+        "missing_ids": missing,
+        "duplicated": recorded - len(uniq),
+        "ok": not missing and recorded == len(uniq),
+    }
+
+
+def _id_ranges(ids: List[int]) -> str:
+    """[14,15,16,25] -> '14~16번, 25번'"""
+    if not ids:
+        return ""
+    parts, start, prev = [], ids[0], ids[0]
+    for i in ids[1:] + [None]:
+        if i is not None and i == prev + 1:
+            prev = i
+            continue
+        parts.append(f"{start}번" if start == prev else f"{start}~{prev}번")
+        if i is not None:
+            start = prev = i
+    return ", ".join(parts)
+
+
+def integrity_warning(info: dict, hits: Optional[int] = None) -> Optional[str]:
+    """분모가 어긋났을 때 무엇이 왜곡되는지까지 말한다."""
+    msgs = []
+    if info["unmatched"]:
+        msg = (f"발사 {info['fired']}발 중 기록은 {info['recorded']}발입니다. "
+               f"{_id_ranges(info['missing_ids'])} 기록이 없습니다.")
+        if hits is not None and info["fired"]:
+            by_rec = round(hits / info["recorded"] * 100, 1) if info["recorded"] else None
+            by_fired = round(hits / info["fired"] * 100, 1)
+            msg += (f" 기록 기준 명중률 {by_rec}%, 발사 기준 {by_fired}%입니다. "
+                    "빠진 발을 빼고 계산하면 실제보다 높게 나옵니다.")
+        else:
+            msg += " 빠진 발을 빼고 계산하면 명중률이 실제보다 높게 나옵니다."
+        msgs.append(msg)
+    if info["duplicated"]:
+        msgs.append(f"같은 발사 번호가 {info['duplicated']}건 중복됩니다. "
+                    "파일이 두 번 이어붙었을 수 있습니다.")
+    return " ".join(msgs) or None
+
+
+def hit_rate_by_fired(hits: int, fired: int) -> Optional[float]:
+    """발사 수를 분모로 한 보수적 명중률."""
+    return round(hits / fired * 100, 1) if fired else None

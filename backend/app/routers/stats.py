@@ -31,6 +31,7 @@ def _shot_rows(shots, exclude_terrain: bool) -> List[dict]:
             else None
         )
         rows.append({
+            "shot_no": s.shot_no,
             "miss": s.miss, "kind": s.kind, "zone": s.zone,
             "dy": s.dy, "dist": s.dist, "drift_deg": s.drift_deg,
             "enemy_speed": s.enemy_speed, "my_speed": s.my_speed,
@@ -57,6 +58,9 @@ def runs_overview(
         hit_rows = _shot_rows(exp.shots, exclude_terrain=True)
 
         summary = stats.summarize([r["miss"] for r in hit_rows])
+        acc = stats.hit_rate(all_rows)
+        # 기록 수만 세면 분모가 조용히 줄어든다. 발사 번호로 발사 수를 먼저 맞춘다.
+        integrity = stats.record_integrity([r["shot_no"] for r in all_rows])
         out.append({
             "experiment_id": exp.id,
             "name": exp.name,
@@ -67,13 +71,29 @@ def runs_overview(
             "posture": stats.firing_posture([r["my_speed"] for r in all_rows]),
             "total_shots": exp.shot_count,
             "analyzed_shots": len(hit_rows),
-            **stats.hit_rate(all_rows),
+            **acc,
             **summary,
+            "recorded": integrity["recorded"],
+            "fired": integrity["fired"],
+            "unmatched": integrity["unmatched"],
+            "missing_ids": integrity["missing_ids"],
+            "integrity_ok": integrity["ok"],
+            "hit_rate_fired": stats.hit_rate_by_fired(acc["hits"], integrity["fired"]),
+            "integrity_warning": stats.integrity_warning(integrity, acc["hits"]),
             "warning": stats.mean_median_gap_warning(summary),
         })
 
     # 조건이 다른 회차가 섞여 있으면 통째로 경고한다. 섞어서 평균 내면 의미가 없다.
     notices = []
+    broken = [e for e in out if not e["integrity_ok"]]
+    if broken:
+        gap = sum(e["unmatched"] for e in broken)
+        where = ", ".join(e["name"] for e in broken)
+        notices.append(
+            f"발사 기록이 {gap}발 비어 있습니다 ({where}). 발사 수와 기록 수가 "
+            "어긋난 회차는 명중률이 실제보다 높게 나오므로, 회차를 눌러 내역을 확인하십시오."
+        )
+
     if len({e["enemy_fire"] for e in out}) > 1:
         notices.append("적 사격 여부가 다른 회차가 섞여 있습니다. 조건별로 나눠서 보십시오.")
 
@@ -117,12 +137,19 @@ def experiment_detail(
             "interpretation": stats.describe_corr(r, overall["n"]),
         })
 
+    acc = stats.hit_rate(all_rows)
+    integrity = stats.record_integrity([r["shot_no"] for r in all_rows])
+    integrity["hit_rate_recorded"] = acc["hit_rate"]
+    integrity["hit_rate_fired"] = stats.hit_rate_by_fired(acc["hits"], integrity["fired"])
+    integrity["warning"] = stats.integrity_warning(integrity, acc["hits"])
+
     return {
         "experiment_id": exp.id,
         "name": exp.name,
         "run_no": exp.run_no,
         "note": exp.note,
-        "accuracy": stats.hit_rate(all_rows),
+        "accuracy": acc,
+        "integrity": integrity,
         "posture": stats.firing_posture([r["my_speed"] for r in all_rows]),
         "overall": overall,
         "warning": stats.mean_median_gap_warning(overall),
@@ -149,7 +176,11 @@ def compare_runs(
         all_rows = _shot_rows(exp.shots, exclude_terrain=False)
         rows = _shot_rows(exp.shots, exclude_terrain)
         summary = stats.summarize([r["miss"] for r in rows])
+        integrity = stats.record_integrity([r["shot_no"] for r in all_rows])
         items.append({
+            "fired": integrity["fired"],
+            "unmatched": integrity["unmatched"],
+            "integrity_ok": integrity["ok"],
             "experiment_id": exp.id, "name": exp.name, "run_no": exp.run_no,
             "note": exp.note, "enemy_fire": exp.enemy_fire,
             "target_speed": stats.speed_profile([r["enemy_speed"] for r in all_rows]),

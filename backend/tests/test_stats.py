@@ -79,3 +79,60 @@ def test_speed_mix_warning():
     assert stats.speed_mix_warning([2.5, 5.0]) is not None
     assert stats.speed_mix_warning([2.5, 2.6]) is None
     assert stats.speed_mix_warning([2.5]) is None
+
+
+# ── 기록 무결성 ──────────────────────────────────────────────
+
+
+def test_integrity_clean_run():
+    """id 가 빈틈없이 이어지면 발사 수와 기록 수가 같다."""
+    i = stats.record_integrity(list(range(1, 13)))
+    assert i["fired"] == 12 and i["recorded"] == 12
+    assert i["unmatched"] == 0 and i["ok"] is True
+    assert stats.integrity_warning(i) is None
+
+
+def test_integrity_detects_single_gap():
+    """33회차 실제 케이스 — 기록 31발, id 1~32, 25번이 빈다."""
+    nos = [n for n in range(1, 33) if n != 25]
+    i = stats.record_integrity(nos)
+    assert i["fired"] == 32
+    assert i["recorded"] == 31
+    assert i["unmatched"] == 1
+    assert i["missing_ids"] == [25]
+    assert i["ok"] is False
+    msg = stats.integrity_warning(i, hits=29)
+    assert "발사 32발" in msg and "기록은 31발" in msg
+    assert "93.5%" in msg and "90.6%" in msg
+
+
+def test_integrity_detects_consecutive_gap():
+    """30회차 실제 케이스 — 14~16번 세 발이 통째로 빈다."""
+    nos = [n for n in range(1, 21) if n not in (14, 15, 16)]
+    i = stats.record_integrity(nos)
+    assert i["fired"] == 20 and i["unmatched"] == 3
+    assert "14~16번" in stats.integrity_warning(i)
+
+
+def test_integrity_detects_duplicates():
+    i = stats.record_integrity([1, 2, 2, 3])
+    assert i["duplicated"] == 1 and i["ok"] is False
+    assert "중복" in stats.integrity_warning(i)
+
+
+def test_integrity_empty_run():
+    i = stats.record_integrity([])
+    assert i["fired"] == 0 and i["ok"] is True
+    assert stats.integrity_warning(i) is None
+
+
+def test_integrity_cannot_see_tail_loss():
+    """마지막 발부터 끊긴 경우는 잡지 못한다. 한계를 못으로 박아 둔다."""
+    i = stats.record_integrity(list(range(1, 31)))  # 실제로는 32발 쐈다고 해도
+    assert i["fired"] == 30 and i["ok"] is True
+
+
+def test_hit_rate_by_fired_is_lower():
+    assert stats.hit_rate_by_fired(29, 31) == 93.5
+    assert stats.hit_rate_by_fired(29, 32) == 90.6
+    assert stats.hit_rate_by_fired(1, 0) is None
